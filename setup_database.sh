@@ -5,8 +5,8 @@
 # 1. Fill in your real values below (between the quotes).
 # 2. Run:  bash setup_database.sh
 
-TURSO_HTTP_URL="https://YOUR_DB_NAME-YOUR_ORG.turso.io/v2/pipeline"
-TURSO_AUTH_TOKEN="YOUR_TURSO_AUTH_TOKEN"
+TURSO_HTTP_URL="https://marageli-robelelias42-lgtm.aws-ap-south-1.turso.io"
+TURSO_AUTH_TOKEN="eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3ODk1MTcxNzgsImlkIjoiMDFhMGE3NTMtZGIwMS03MjlkLWFiNDYtOGVhYWY5MDkzNDE1Iiwia2lkIjoidzBTSWRmek9UVkg2VWZ5ZWVaemFaQmFlS1FJREROR01CaDRBYzZXZ2pFQSIsInJpZCI6IjY4OTNjZTAzLTAzZmYtNGVkYi05OTI0LTRhY2Y5MGNkN2FhNiJ9.2QTqDVyleSPRBeJw9AthQfi4lWGZLW2BaFZY6_wRRcD50Rt7qaE25es6Yql5xJ00umq9ytK0wctPqo1KiQdOBQ"
 
 curl -s -X POST "$TURSO_HTTP_URL" \
   -H "Authorization: Bearer $TURSO_AUTH_TOKEN" \
