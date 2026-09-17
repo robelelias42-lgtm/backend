@@ -81,3 +81,24 @@ CREATE TABLE IF NOT EXISTS reactions (
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE(user_id, listing_id)
 );
+
+CREATE TABLE IF NOT EXISTS game_boards (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT UNIQUE NOT NULL,
+    status TEXT NOT NULL DEFAULT 'closed', -- 'closed' = waiting for winners, 'open' = accepting picks
+    price_etb REAL NOT NULL DEFAULT 20,
+    round INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE TABLE IF NOT EXISTS game_numbers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    board_id INTEGER NOT NULL REFERENCES game_boards(id),
+    number INTEGER NOT NULL,
+    status TEXT NOT NULL DEFAULT 'available', -- available | pending_payment | taken
+    user_id INTEGER REFERENCES users(id),
+    receipt_file_id TEXT,
+    taken_at TEXT,
+    UNIQUE(board_id, number)
+);
+
+INSERT OR IGNORE INTO game_boards (name) VALUES ('Tepi'), ('Aman'), ('Mizan');
