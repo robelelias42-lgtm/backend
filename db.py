@@ -108,7 +108,7 @@ async def get_listing(listing_id: int):
 
 async def list_approved_listings(category_id: int | None = None, store_only: bool = False,
                                   search: str | None = None, sort: str | None = None):
-    sql = "SELECT * FROM listings WHERE status = 'approved'"
+    sql = "SELECT * FROM listings WHERE status IN ('approved', 'sold')"
     args = []
     if store_only:
         sql += " AND is_store_item = 1"
@@ -130,6 +130,14 @@ async def list_approved_listings(category_id: int | None = None, store_only: boo
         sql += " ORDER BY created_at DESC"
 
     return await query(sql, args)
+
+
+async def mark_listing_sold(listing_id: int):
+    await run("UPDATE listings SET status = 'sold' WHERE id = ?", [listing_id])
+
+
+async def mark_listing_on_market(listing_id: int):
+    await run("UPDATE listings SET status = 'approved' WHERE id = ?", [listing_id])
 
 
 async def list_listings_for_user(user_id: int):
@@ -223,6 +231,86 @@ async def list_pending_review_listings():
     return await query(
         "SELECT * FROM listings WHERE status = 'pending_review' ORDER BY created_at ASC"
     )
+
+
+# ---------- Games (Tepi / Aman / Mizan) ----------
+
+async def list_game_boards():
+    return await query("SELECT * FROM game_boards ORDER BY id")
+
+
+async def get_game_board(board_id: int):
+    rows = await query("SELECT * FROM game_boards WHERE id = ?", [board_id])
+    return rows[0] if rows else None
+
+
+async def list_game_numbers(board_id: int):
+    return await query("SELECT * FROM game_numbers WHERE board_id = ? ORDER BY number", [board_id])
+
+
+async def get_game_number(board_id: int, number: int):
+    rows = await query(
+        "SELECT * FROM game_numbers WHERE board_id = ? AND number = ?", [board_id, number]
+    )
+    return rows[0] if rows else None
+
+
+async def get_game_number_by_id(number_id: int):
+    rows = await query("SELECT * FROM game_numbers WHERE id = ?", [number_id])
+    return rows[0] if rows else None
+
+
+async def claim_game_number(board_id: int, number: int, user_id: int) -> bool:
+    """Move a number from available -> pending_payment for this user.
+    Returns False if someone else grabbed it first (no crash, just a clean 'too late')."""
+    result = await run(
+        """UPDATE game_numbers SET status = 'pending_payment', user_id = ?
+           WHERE board_id = ? AND number = ? AND status = 'available'""",
+        [user_id, board_id, number],
+    )
+    return result.rows_affected > 0
+
+
+async def attach_game_receipt(number_id: int, receipt_file_id: str):
+    await run("UPDATE game_numbers SET receipt_file_id = ? WHERE id = ?", [receipt_file_id, number_id])
+
+
+async def approve_game_number(number_id: int) -> bool:
+    """Marks a number as taken. Returns True if this filled the board (all 100 taken)."""
+    row = await get_game_number_by_id(number_id)
+    await run(
+        "UPDATE game_numbers SET status = 'taken', taken_at = datetime('now') WHERE id = ?",
+        [number_id],
+    )
+    remaining = await query(
+        "SELECT COUNT(*) as c FROM game_numbers WHERE board_id = ? AND status != 'taken'",
+        [row["board_id"]],
+    )
+    if remaining[0]["c"] == 0:
+        await run("UPDATE game_boards SET status = 'closed' WHERE id = ?", [row["board_id"]])
+        return True
+    return False
+
+
+async def reject_game_number(number_id: int):
+    await run(
+        "UPDATE game_numbers SET status = 'available', user_id = NULL, receipt_file_id = NULL WHERE id = ?",
+        [number_id],
+    )
+
+
+async def open_game_board(board_id: int):
+    """Starts a fresh round: clears the board back to all-available and marks it open."""
+    await run(
+        """UPDATE game_numbers SET status = 'available', user_id = NULL,
+           receipt_file_id = NULL, taken_at = NULL WHERE board_id = ?""",
+        [board_id],
+    )
+    await run("UPDATE game_boards SET status = 'open', round = round + 1 WHERE id = ?", [board_id])
+
+
+async def close_game_board(board_id: int):
+    await run("UPDATE game_boards SET status = 'closed' WHERE id = ?", [board_id])
 
 
 # ---------- Payments ----------
