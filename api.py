@@ -131,36 +131,27 @@ async def get_store(search: str | None = None, sort: str | None = None,
 @app.get("/api/listings")
 async def get_listings(category_id: int | None = None, search: str | None = None, sort: str | None = None,
                         current_user=Depends(get_current_user_optional)):
-    """Approved student listings, optionally filtered by category, searched, and sorted."""
+    """Approved (or sold) student listings, optionally filtered by category, searched, and sorted."""
     listings = await db.list_approved_listings(category_id=category_id, store_only=False, search=search, sort=sort)
     return await _enrich_listings(listings, current_user)
 
 
-@app.get("/api/my-listings")
-async def get_my_listings(current_user=Depends(get_current_user)):
-    """The logged-in student's own listings, any status (draft/pending/approved/rejected)."""
-    listings = await db.list_listings_for_user(current_user["id"])
-    return await _enrich_listings(listings, current_user)
+# ---------- Admin: mark a listing sold / back on market ----------
+
+@app.post("/api/listings/{listing_id}/mark-sold")
+async def mark_sold(listing_id: int, current_user=Depends(get_current_user)):
+    if not current_user["is_admin"]:
+        raise HTTPException(403, "Admins only")
+    await db.mark_listing_sold(listing_id)
+    return {"ok": True, "status": "sold"}
 
 
-# ---------- Favorites ----------
-
-@app.get("/api/favorites")
-async def get_favorites(current_user=Depends(get_current_user)):
-    listings = await db.list_favorite_listings(current_user["id"])
-    return await _enrich_listings(listings, current_user)
-
-
-@app.post("/api/favorites/{listing_id}")
-async def add_favorite(listing_id: int, current_user=Depends(get_current_user)):
-    await db.add_favorite(current_user["id"], listing_id)
-    return {"ok": True, "favorited": True}
-
-
-@app.delete("/api/favorites/{listing_id}")
-async def remove_favorite(listing_id: int, current_user=Depends(get_current_user)):
-    await db.remove_favorite(current_user["id"], listing_id)
-    return {"ok": True, "favorited": False}
+@app.post("/api/listings/{listing_id}/mark-on-market")
+async def mark_on_market(listing_id: int, current_user=Depends(get_current_user)):
+    if not current_user["is_admin"]:
+        raise HTTPException(403, "Admins only")
+    await db.mark_listing_on_market(listing_id)
+    return {"ok": True, "status": "approved"}
 
 
 # ---------- Reactions (like / dislike) ----------
@@ -179,26 +170,52 @@ async def react_to_listing(listing_id: int, body: ReactionRequest, current_user=
 
 
 async def _enrich_listings(listings, current_user):
-    """Attach photo URL, currency, reaction counts, and (if logged in) the user's
-    own reaction + favorite status to each listing."""
+    """Attach photo URL, currency, reaction counts, and (if admin) a can_manage flag
+    so the frontend knows whether to show the Mark as Sold / On Market controls."""
     listings = _with_photo_urls(listings)
     ids = [listing["id"] for listing in listings]
     counts = await db.get_reaction_counts(ids)
 
     my_reactions = {}
-    favorite_ids = set()
     if current_user:
         my_reactions = await db.get_user_reactions(current_user["id"], ids)
-        favorite_ids = await db.get_favorite_listing_ids(current_user["id"])
+
+    is_admin = bool(current_user and current_user["is_admin"])
 
     for listing in listings:
         c = counts.get(listing["id"], {"likes": 0, "dislikes": 0})
         listing["likes"] = c["likes"]
         listing["dislikes"] = c["dislikes"]
         listing["my_reaction"] = my_reactions.get(listing["id"])
-        listing["is_favorite"] = listing["id"] in favorite_ids
+        listing["can_manage"] = is_admin
 
     return listings
+
+
+@app.get("/api/games")
+async def get_games():
+    """Read-only board view for the Mini App's GAME tab.
+    Picking/paying for numbers happens in the bot chat, not here — this just
+    shows which numbers are taken so far. Pending (unapproved) payments are
+    intentionally shown as still 'available' publicly, since only an admin
+    approval should visibly lock in a number."""
+    boards = await db.list_game_boards()
+    result = []
+    for board in boards:
+        numbers = await db.list_game_numbers(board["id"])
+        result.append({
+            "id": board["id"],
+            "name": board["name"],
+            "status": board["status"],
+            "round": board["round"],
+            "price_etb": board["price_etb"],
+            "currency": CURRENCY,
+            "numbers": [
+                {"number": n["number"], "status": "taken" if n["status"] == "taken" else "available"}
+                for n in numbers
+            ],
+        })
+    return result
 
 
 @app.get("/api/photo/{file_id}")
