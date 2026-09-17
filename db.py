@@ -106,7 +106,8 @@ async def get_listing(listing_id: int):
     return rows[0] if rows else None
 
 
-async def list_approved_listings(category_id: int | None = None, store_only: bool = False):
+async def list_approved_listings(category_id: int | None = None, store_only: bool = False,
+                                  search: str | None = None, sort: str | None = None):
     sql = "SELECT * FROM listings WHERE status = 'approved'"
     args = []
     if store_only:
@@ -116,8 +117,106 @@ async def list_approved_listings(category_id: int | None = None, store_only: boo
     if category_id:
         sql += " AND category_id = ?"
         args.append(category_id)
-    sql += " ORDER BY created_at DESC"
+    if search:
+        sql += " AND (title LIKE ? OR description LIKE ?)"
+        like = f"%{search}%"
+        args.extend([like, like])
+
+    if sort == "price_asc":
+        sql += " ORDER BY price_etb ASC"
+    elif sort == "price_desc":
+        sql += " ORDER BY price_etb DESC"
+    else:
+        sql += " ORDER BY created_at DESC"
+
     return await query(sql, args)
+
+
+async def list_listings_for_user(user_id: int):
+    """A student's own listings (any status), newest first — for 'My Listings'."""
+    return await query(
+        "SELECT * FROM listings WHERE user_id = ? ORDER BY created_at DESC",
+        [user_id],
+    )
+
+
+# ---------- Favorites ----------
+
+async def add_favorite(user_id: int, listing_id: int):
+    await run(
+        "INSERT OR IGNORE INTO favorites (user_id, listing_id) VALUES (?, ?)",
+        [user_id, listing_id],
+    )
+
+
+async def remove_favorite(user_id: int, listing_id: int):
+    await run(
+        "DELETE FROM favorites WHERE user_id = ? AND listing_id = ?",
+        [user_id, listing_id],
+    )
+
+
+async def list_favorite_listings(user_id: int):
+    return await query(
+        """SELECT listings.* FROM listings
+           JOIN favorites ON favorites.listing_id = listings.id
+           WHERE favorites.user_id = ? AND listings.status = 'approved'
+           ORDER BY favorites.created_at DESC""",
+        [user_id],
+    )
+
+
+async def get_favorite_listing_ids(user_id: int):
+    rows = await query("SELECT listing_id FROM favorites WHERE user_id = ?", [user_id])
+    return {row["listing_id"] for row in rows}
+
+
+# ---------- Reactions (like / dislike) ----------
+
+async def set_reaction(user_id: int, listing_id: int, reaction: str):
+    """reaction is 'like' or 'dislike'. Calling again with the same value removes it (toggle)."""
+    existing = await query(
+        "SELECT reaction FROM reactions WHERE user_id = ? AND listing_id = ?",
+        [user_id, listing_id],
+    )
+    if existing and existing[0]["reaction"] == reaction:
+        await run("DELETE FROM reactions WHERE user_id = ? AND listing_id = ?", [user_id, listing_id])
+        return None
+    await run(
+        """INSERT INTO reactions (user_id, listing_id, reaction) VALUES (?, ?, ?)
+           ON CONFLICT(user_id, listing_id) DO UPDATE SET reaction = excluded.reaction""",
+        [user_id, listing_id, reaction],
+    )
+    return reaction
+
+
+async def get_reaction_counts(listing_ids: list[int]):
+    """Returns {listing_id: {"likes": n, "dislikes": n}} for a batch of listings."""
+    if not listing_ids:
+        return {}
+    placeholders = ",".join("?" for _ in listing_ids)
+    rows = await query(
+        f"""SELECT listing_id, reaction, COUNT(*) as c FROM reactions
+            WHERE listing_id IN ({placeholders}) GROUP BY listing_id, reaction""",
+        listing_ids,
+    )
+    counts = {lid: {"likes": 0, "dislikes": 0} for lid in listing_ids}
+    for row in rows:
+        key = "likes" if row["reaction"] == "like" else "dislikes"
+        counts[row["listing_id"]][key] = row["c"]
+    return counts
+
+
+async def get_user_reactions(user_id: int, listing_ids: list[int]):
+    """Returns {listing_id: 'like'|'dislike'} for the given user's own reactions."""
+    if not listing_ids:
+        return {}
+    placeholders = ",".join("?" for _ in listing_ids)
+    rows = await query(
+        f"SELECT listing_id, reaction FROM reactions WHERE user_id = ? AND listing_id IN ({placeholders})",
+        [user_id, *listing_ids],
+    )
+    return {row["listing_id"]: row["reaction"] for row in rows}
 
 
 async def list_pending_review_listings():
