@@ -169,6 +169,17 @@ async def react_to_listing(listing_id: int, body: ReactionRequest, current_user=
     return {"ok": True, "my_reaction": result, **counts[listing_id]}
 
 
+def _with_photo_urls(listings):
+    """
+    Listings only store a Telegram file_id, not a real image URL.
+    Attach a ready-to-use photo URL field the frontend can display directly.
+    """
+    for listing in listings:
+        listing["currency"] = CURRENCY
+        listing["photo_url"] = f"/api/photo/{listing['photo_file_id']}"
+    return listings
+
+
 async def _enrich_listings(listings, current_user):
     """Attach photo URL, currency, reaction counts, and (if admin) a can_manage flag
     so the frontend knows whether to show the Mark as Sold / On Market controls."""
