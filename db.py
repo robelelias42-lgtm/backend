@@ -309,8 +309,66 @@ async def open_game_board(board_id: int):
     await run("UPDATE game_boards SET status = 'open', round = round + 1 WHERE id = ?", [board_id])
 
 
+async def get_pending_numbers_for_user(board_id: int, user_id: int):
+    return await query(
+        "SELECT * FROM game_numbers WHERE board_id = ? AND user_id = ? AND status = 'pending_payment' ORDER BY number",
+        [board_id, user_id],
+    )
+
+
+async def attach_game_receipt_batch(board_id: int, user_id: int, receipt_file_id: str):
+    await run(
+        "UPDATE game_numbers SET receipt_file_id = ? WHERE board_id = ? AND user_id = ? AND status = 'pending_payment'",
+        [receipt_file_id, board_id, user_id],
+    )
+
+
+async def approve_game_numbers_batch(board_id: int, user_id: int) -> tuple[list[int], bool]:
+    """Approves every pending number this user picked on this board. Returns (numbers, became_full)."""
+    rows = await query(
+        "SELECT number FROM game_numbers WHERE board_id = ? AND user_id = ? AND status = 'pending_payment'",
+        [board_id, user_id],
+    )
+    numbers = [r["number"] for r in rows]
+    await run(
+        """UPDATE game_numbers SET status = 'taken', taken_at = datetime('now')
+           WHERE board_id = ? AND user_id = ? AND status = 'pending_payment'""",
+        [board_id, user_id],
+    )
+    remaining = await query(
+        "SELECT COUNT(*) as c FROM game_numbers WHERE board_id = ? AND status != 'taken'", [board_id]
+    )
+    became_full = remaining[0]["c"] == 0
+    if became_full:
+        await run("UPDATE game_boards SET status = 'closed' WHERE id = ?", [board_id])
+    return numbers, became_full
+
+
+async def reject_game_numbers_batch(board_id: int, user_id: int) -> list[int]:
+    rows = await query(
+        "SELECT number FROM game_numbers WHERE board_id = ? AND user_id = ? AND status = 'pending_payment'",
+        [board_id, user_id],
+    )
+    numbers = [r["number"] for r in rows]
+    await run(
+        """UPDATE game_numbers SET status = 'available', user_id = NULL, receipt_file_id = NULL
+           WHERE board_id = ? AND user_id = ? AND status = 'pending_payment'""",
+        [board_id, user_id],
+    )
+    return numbers
+
+
 async def close_game_board(board_id: int):
     await run("UPDATE game_boards SET status = 'closed' WHERE id = ?", [board_id])
+
+
+# ---------- Admin: manage live products (sold / on market) ----------
+
+async def list_manageable_listings():
+    """Recent approved or sold listings (both Store and Market), for the admin's /products command."""
+    return await query(
+        "SELECT * FROM listings WHERE status IN ('approved', 'sold') ORDER BY created_at DESC LIMIT 40"
+    )
 
 
 # ---------- Payments ----------
