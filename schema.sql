@@ -64,3 +64,20 @@ CREATE TABLE IF NOT EXISTS reports (
     reason TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS favorites (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    listing_id INTEGER NOT NULL REFERENCES listings(id),
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(user_id, listing_id)
+);
+
+CREATE TABLE IF NOT EXISTS reactions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    listing_id INTEGER NOT NULL REFERENCES listings(id),
+    reaction TEXT NOT NULL CHECK (reaction IN ('like', 'dislike')),
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(user_id, listing_id)
+);
