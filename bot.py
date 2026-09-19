@@ -78,7 +78,7 @@ def main_menu_keyboard(is_admin: bool = False):
         buttons.append([KeyboardButton(text="📦 Manage Products")])
         buttons.append([KeyboardButton(text="🗑 Remove Product")])
     if MINI_APP_URL and MINI_APP_URL != "YOUR_MINI_APP_URL":
-        buttons.append([KeyboardButton(text="🏪 Open Marageli", web_app=WebAppInfo(url=MINI_APP_URL))])
+        buttons.append([KeyboardButton(text="🏪 ማራጌሊ ገበያን ይመልከቱ", web_app=WebAppInfo(url=MINI_APP_URL))])
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
 
@@ -127,9 +127,9 @@ async def start_handler(message: Message):
         is_admin=is_admin,
     )
     await message.answer(
-        f"Selam! 👋 Welcome to {SITE_NAME} (ማራጌሊ).\n\n"
-        "Buy and sell with people across Ethiopia, right here in Telegram.\n\n"
-        "Use the buttons below to get started.",
+        f"ሰላም! 👋 እንኳን በሰላም ወደ {SITE_NAME} (ማራጌሊ) ገበያ መጡ!\n\n"
+        "በመላው ቴፒ፣ሚዛን እና አማን ካሉ ሰዎች ጋር እዚህ ቴሌግራም ውስጥ ይግዙ እና ይሽጡ።\n\n"
+        "ለመጀመር ከታች ያሉትን ቁልፎች(buttons) ተጠቀም",
         reply_markup=main_menu_keyboard(is_admin=is_admin),
     )
 
@@ -143,11 +143,11 @@ async def cancel_handler(message: Message, state: FSMContext):
 
 # ---------- Selling flow: anyone creates one listing (Community Market) ----------
 
-@router.message(F.text == "🛍 Sell an item")
+@router.message(F.text == "🛍 እቃዎን ይሽጡ")
 async def sell_start(message: Message, state: FSMContext):
     categories = await db.list_categories()
     await state.set_state(SellListing.choosing_category)
-    await message.answer("What category is your item?", reply_markup=category_keyboard(categories))
+    await message.answer("የእርስዎ እቃ የትኛው ምድብ ውስጥ ነው።?", reply_markup=category_keyboard(categories))
 
 
 @router.callback_query(SellListing.choosing_category, F.data.startswith("cat:"))
@@ -155,7 +155,7 @@ async def sell_category_chosen(callback: CallbackQuery, state: FSMContext):
     category_id = int(callback.data.split(":")[1])
     await state.update_data(category_id=category_id)
     await state.set_state(SellListing.entering_title)
-    await callback.message.answer("Great. What's the item's name? (e.g. 'Casio calculator')")
+    await callback.message.answer("የእቃው ስም? (e.g. 'Casio calculator')")
     await callback.answer()
 
 
@@ -163,14 +163,14 @@ async def sell_category_chosen(callback: CallbackQuery, state: FSMContext):
 async def sell_title(message: Message, state: FSMContext):
     await state.update_data(title=message.text)
     await state.set_state(SellListing.entering_description)
-    await message.answer("Add a short description (condition, details, etc.):")
+    await message.answer(""አጭር መግለጫ ያክሉ (ሁኔታ፣ ዝርዝሮች፣ ወዘተ.):")
 
 
 @router.message(SellListing.entering_description)
 async def sell_description(message: Message, state: FSMContext):
     await state.update_data(description=message.text)
     await state.set_state(SellListing.entering_price)
-    await message.answer(f"What's the price, in {CURRENCY}? (numbers only, e.g. 250)")
+    await message.answer(f"ዋጋው ስንት ነው፣ በ{CURRENCY}? (ቁጥሮች ብቻ ለምሳሌ. 250)")
 
 
 @router.message(SellListing.entering_price)
@@ -178,7 +178,7 @@ async def sell_price(message: Message, state: FSMContext):
     try:
         price = float(message.text.strip())
     except ValueError:
-        await message.answer("Please send a number, e.g. 250")
+        await message.answer("እባክዎ ቁጥር ይላኩ፣ ለምሳሌ 250")
         return
     await state.update_data(price=price)
     await state.set_state(SellListing.uploading_photo)
@@ -190,19 +190,19 @@ async def sell_photo(message: Message, state: FSMContext):
     photo_file_id = message.photo[-1].file_id
     await state.update_data(photo_file_id=photo_file_id)
     await state.set_state(SellListing.entering_pickup)
-    await message.answer("Where is this item located? (e.g. 'Bole, Addis Ababa')")
+    await message.answer("እቃው የት ነው የሚገኘው? (ለምሳሌ 'ቴፒ፣ ሚዛን')")
 
 
 @router.message(SellListing.uploading_photo)
 async def sell_photo_invalid(message: Message):
-    await message.answer("Please send a photo (not text).")
+    await message.answer("እባክህ ፎቶ ይላኩ (ጽሑፍ ሳይሆን).")
 
 
 @router.message(SellListing.entering_pickup)
 async def sell_pickup(message: Message, state: FSMContext):
     await state.update_data(pickup_location=message.text)
     await state.set_state(SellListing.entering_min_qty)
-    await message.answer("What's the minimum number of units a buyer can order? (e.g. 1)")
+    await message.answer("አንድ ገዢ ማዘዝ የሚችለው አነስተኛው የንጥሎች ብዛት ስንት ነው? (ለምሳሌ 1)")
 
 
 @router.message(SellListing.entering_min_qty)
@@ -212,11 +212,11 @@ async def sell_min_qty(message: Message, state: FSMContext):
         if qty < 1:
             raise ValueError
     except ValueError:
-        await message.answer("Please send a whole number, e.g. 1")
+        await message.answer("እባክዎ ሙሉ ቁጥር ይላኩ፣ ለምሳሌ 1")
         return
     await state.update_data(min_order_qty=qty)
     await state.set_state(SellListing.choosing_delivery)
-    await message.answer("Is delivery available for this item?", reply_markup=delivery_keyboard())
+    await message.answer("ለዚህ ዕቃ delivery አለ??", reply_markup=delivery_keyboard())
 
 
 @router.callback_query(SellListing.choosing_delivery, F.data.startswith("deliv:"))
@@ -224,7 +224,7 @@ async def sell_delivery_chosen(callback: CallbackQuery, state: FSMContext):
     is_delivery = callback.data.split(":")[1] == "yes"
     await state.update_data(is_delivery=is_delivery)
     await state.set_state(SellListing.entering_phone)
-    await callback.message.answer("What phone number should buyers contact you on?")
+    await callback.message.answer("በየትኛው ስልክ ቁጥር ገዢዎች እርስዎን ማግኘት አለባቸው?")
     await callback.answer()
 
 
@@ -249,9 +249,9 @@ async def sell_phone(message: Message, state: FSMContext):
     await state.set_state(SellListing.uploading_receipt)
 
     await message.answer(
-        "Your listing is saved as a draft. To publish it, please pay the "
-        "small listing fee and send a photo/screenshot of your payment "
-        "receipt here."
+        "ዝርዝርዎ እንደ draft ተቀምጧል። እሱን ለማስለጠፍ እባክዎን ይክፈሉት"
+        "ቀጥሎ ከሚዘረዘረው የክፍያ መንገድ አንዱን በመጠቀም 20 ብር ከፍለው photo/screenshot ይላኩ"
+        "Tell birr: 0992242197"
     )
 
 
