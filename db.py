@@ -80,14 +80,16 @@ async def count_active_listings_for_user(user_id: int):
 
 
 async def create_listing(user_id, category_id, title, description, price_etb,
-                          photo_file_id, pickup_location, is_store_item=False):
+                          photo_file_id, pickup_location, min_order_qty=1,
+                          is_delivery=False, phone_number=None, is_store_item=False):
     await run(
         """INSERT INTO listings
            (user_id, category_id, title, description, price_etb, photo_file_id,
-            pickup_location, is_store_item, status)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            pickup_location, min_order_qty, is_delivery, phone_number, is_store_item, status)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         [user_id, category_id, title, description, price_etb, photo_file_id,
-         pickup_location, 1 if is_store_item else 0,
+         pickup_location, min_order_qty, 1 if is_delivery else 0, phone_number,
+         1 if is_store_item else 0,
          "approved" if is_store_item else "pending_payment"],
     )
     rows = await query("SELECT * FROM listings ORDER BY id DESC LIMIT 1")
@@ -133,50 +135,37 @@ async def list_approved_listings(category_id: int | None = None, store_only: boo
 
 
 async def mark_listing_sold(listing_id: int):
+    """Used both for 'Sold' (market items) and 'Not Available' (store items) — same underlying status."""
     await run("UPDATE listings SET status = 'sold' WHERE id = ?", [listing_id])
 
 
 async def mark_listing_on_market(listing_id: int):
+    """Used both for 'On Market' (market items) and 'Available' (store items)."""
     await run("UPDATE listings SET status = 'approved' WHERE id = ?", [listing_id])
 
 
-async def list_listings_for_user(user_id: int):
-    """A student's own listings (any status), newest first — for 'My Listings'."""
+async def delete_listing(listing_id: int):
+    """Removes a listing and anything referencing it (reactions, payments, orders, reports)."""
+    await run("DELETE FROM reactions WHERE listing_id = ?", [listing_id])
+    await run("DELETE FROM payments WHERE listing_id = ?", [listing_id])
+    await run("DELETE FROM orders WHERE listing_id = ?", [listing_id])
+    await run("DELETE FROM reports WHERE listing_id = ?", [listing_id])
+    await run("DELETE FROM listings WHERE id = ?", [listing_id])
+
+
+async def list_pending_review_listings():
     return await query(
-        "SELECT * FROM listings WHERE user_id = ? ORDER BY created_at DESC",
-        [user_id],
+        "SELECT * FROM listings WHERE status = 'pending_review' ORDER BY created_at ASC"
     )
 
 
-# ---------- Favorites ----------
+# ---------- Admin: manage live products (sold / on market) ----------
 
-async def add_favorite(user_id: int, listing_id: int):
-    await run(
-        "INSERT OR IGNORE INTO favorites (user_id, listing_id) VALUES (?, ?)",
-        [user_id, listing_id],
-    )
-
-
-async def remove_favorite(user_id: int, listing_id: int):
-    await run(
-        "DELETE FROM favorites WHERE user_id = ? AND listing_id = ?",
-        [user_id, listing_id],
-    )
-
-
-async def list_favorite_listings(user_id: int):
+async def list_manageable_listings():
+    """Recent approved or sold listings (both Store and Market), for the admin's /products command."""
     return await query(
-        """SELECT listings.* FROM listings
-           JOIN favorites ON favorites.listing_id = listings.id
-           WHERE favorites.user_id = ? AND listings.status = 'approved'
-           ORDER BY favorites.created_at DESC""",
-        [user_id],
+        "SELECT * FROM listings WHERE status IN ('approved', 'sold') ORDER BY created_at DESC LIMIT 40"
     )
-
-
-async def get_favorite_listing_ids(user_id: int):
-    rows = await query("SELECT listing_id FROM favorites WHERE user_id = ?", [user_id])
-    return {row["listing_id"] for row in rows}
 
 
 # ---------- Reactions (like / dislike) ----------
@@ -225,150 +214,6 @@ async def get_user_reactions(user_id: int, listing_ids: list[int]):
         [user_id, *listing_ids],
     )
     return {row["listing_id"]: row["reaction"] for row in rows}
-
-
-async def list_pending_review_listings():
-    return await query(
-        "SELECT * FROM listings WHERE status = 'pending_review' ORDER BY created_at ASC"
-    )
-
-
-# ---------- Games (Tepi / Aman / Mizan) ----------
-
-async def list_game_boards():
-    return await query("SELECT * FROM game_boards ORDER BY id")
-
-
-async def get_game_board(board_id: int):
-    rows = await query("SELECT * FROM game_boards WHERE id = ?", [board_id])
-    return rows[0] if rows else None
-
-
-async def list_game_numbers(board_id: int):
-    return await query("SELECT * FROM game_numbers WHERE board_id = ? ORDER BY number", [board_id])
-
-
-async def get_game_number(board_id: int, number: int):
-    rows = await query(
-        "SELECT * FROM game_numbers WHERE board_id = ? AND number = ?", [board_id, number]
-    )
-    return rows[0] if rows else None
-
-
-async def get_game_number_by_id(number_id: int):
-    rows = await query("SELECT * FROM game_numbers WHERE id = ?", [number_id])
-    return rows[0] if rows else None
-
-
-async def claim_game_number(board_id: int, number: int, user_id: int) -> bool:
-    """Move a number from available -> pending_payment for this user.
-    Returns False if someone else grabbed it first (no crash, just a clean 'too late')."""
-    result = await run(
-        """UPDATE game_numbers SET status = 'pending_payment', user_id = ?
-           WHERE board_id = ? AND number = ? AND status = 'available'""",
-        [user_id, board_id, number],
-    )
-    return result.rows_affected > 0
-
-
-async def attach_game_receipt(number_id: int, receipt_file_id: str):
-    await run("UPDATE game_numbers SET receipt_file_id = ? WHERE id = ?", [receipt_file_id, number_id])
-
-
-async def approve_game_number(number_id: int) -> bool:
-    """Marks a number as taken. Returns True if this filled the board (all 100 taken)."""
-    row = await get_game_number_by_id(number_id)
-    await run(
-        "UPDATE game_numbers SET status = 'taken', taken_at = datetime('now') WHERE id = ?",
-        [number_id],
-    )
-    remaining = await query(
-        "SELECT COUNT(*) as c FROM game_numbers WHERE board_id = ? AND status != 'taken'",
-        [row["board_id"]],
-    )
-    if remaining[0]["c"] == 0:
-        await run("UPDATE game_boards SET status = 'closed' WHERE id = ?", [row["board_id"]])
-        return True
-    return False
-
-
-async def reject_game_number(number_id: int):
-    await run(
-        "UPDATE game_numbers SET status = 'available', user_id = NULL, receipt_file_id = NULL WHERE id = ?",
-        [number_id],
-    )
-
-
-async def open_game_board(board_id: int):
-    """Starts a fresh round: clears the board back to all-available and marks it open."""
-    await run(
-        """UPDATE game_numbers SET status = 'available', user_id = NULL,
-           receipt_file_id = NULL, taken_at = NULL WHERE board_id = ?""",
-        [board_id],
-    )
-    await run("UPDATE game_boards SET status = 'open', round = round + 1 WHERE id = ?", [board_id])
-
-
-async def get_pending_numbers_for_user(board_id: int, user_id: int):
-    return await query(
-        "SELECT * FROM game_numbers WHERE board_id = ? AND user_id = ? AND status = 'pending_payment' ORDER BY number",
-        [board_id, user_id],
-    )
-
-
-async def attach_game_receipt_batch(board_id: int, user_id: int, receipt_file_id: str):
-    await run(
-        "UPDATE game_numbers SET receipt_file_id = ? WHERE board_id = ? AND user_id = ? AND status = 'pending_payment'",
-        [receipt_file_id, board_id, user_id],
-    )
-
-
-async def approve_game_numbers_batch(board_id: int, user_id: int) -> tuple[list[int], bool]:
-    """Approves every pending number this user picked on this board. Returns (numbers, became_full)."""
-    rows = await query(
-        "SELECT number FROM game_numbers WHERE board_id = ? AND user_id = ? AND status = 'pending_payment'",
-        [board_id, user_id],
-    )
-    numbers = [r["number"] for r in rows]
-    await run(
-        """UPDATE game_numbers SET status = 'taken', taken_at = datetime('now')
-           WHERE board_id = ? AND user_id = ? AND status = 'pending_payment'""",
-        [board_id, user_id],
-    )
-    remaining = await query(
-        "SELECT COUNT(*) as c FROM game_numbers WHERE board_id = ? AND status != 'taken'", [board_id]
-    )
-    became_full = remaining[0]["c"] == 0
-    if became_full:
-        await run("UPDATE game_boards SET status = 'closed' WHERE id = ?", [board_id])
-    return numbers, became_full
-
-
-async def reject_game_numbers_batch(board_id: int, user_id: int) -> list[int]:
-    rows = await query(
-        "SELECT number FROM game_numbers WHERE board_id = ? AND user_id = ? AND status = 'pending_payment'",
-        [board_id, user_id],
-    )
-    numbers = [r["number"] for r in rows]
-    await run(
-        """UPDATE game_numbers SET status = 'available', user_id = NULL, receipt_file_id = NULL
-           WHERE board_id = ? AND user_id = ? AND status = 'pending_payment'""",
-        [board_id, user_id],
-    )
-    return numbers
-
-
-async def close_game_board(board_id: int):
-    await run("UPDATE game_boards SET status = 'closed' WHERE id = ?", [board_id])
-
-
-# ---------- Admin: manage live products (sold / on market) ----------
-
-async def list_manageable_listings():
-    """Recent approved or sold listings (both Store and Market), for the admin's /products command."""
-    return await query(
-        "SELECT * FROM listings WHERE status IN ('approved', 'sold') ORDER BY created_at DESC LIMIT 40"
-    )
 
 
 # ---------- Payments ----------
