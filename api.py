@@ -39,8 +39,8 @@ app.add_middleware(
 
 # ---------- Telegram Mini App auth ----------
 # The frontend sends Telegram's signed `initData` string with every request
-# that needs to know "who is this user" (favorites, likes, My Listings).
-# We verify it here so nobody can fake being a different student.
+# that needs to know "who is this user" (likes, admin actions).
+# We verify it here so nobody can fake being someone else.
 
 def _verify_init_data(init_data: str) -> dict:
     parsed = dict(parse_qsl(init_data, strict_parsing=True))
@@ -201,32 +201,6 @@ async def _enrich_listings(listings, current_user):
         listing["can_manage"] = is_admin
 
     return listings
-
-
-@app.get("/api/games")
-async def get_games():
-    """Read-only board view for the Mini App's GAME tab.
-    Picking/paying for numbers happens in the bot chat, not here — this just
-    shows which numbers are taken so far. Pending (unapproved) payments are
-    intentionally shown as still 'available' publicly, since only an admin
-    approval should visibly lock in a number."""
-    boards = await db.list_game_boards()
-    result = []
-    for board in boards:
-        numbers = await db.list_game_numbers(board["id"])
-        result.append({
-            "id": board["id"],
-            "name": board["name"],
-            "status": board["status"],
-            "round": board["round"],
-            "price_etb": board["price_etb"],
-            "currency": CURRENCY,
-            "numbers": [
-                {"number": n["number"], "status": "taken" if n["status"] == "taken" else "available"}
-                for n in numbers
-            ],
-        })
-    return result
 
 
 @app.get("/api/photo/{file_id}")
