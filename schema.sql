@@ -33,9 +33,12 @@ CREATE TABLE IF NOT EXISTS listings (
     description TEXT,
     price_etb REAL NOT NULL,
     photo_file_id TEXT,
-    pickup_location TEXT,
-    is_store_item INTEGER NOT NULL DEFAULT 0,      -- 1 = your own Marageli Store item, 0 = student listing
-    status TEXT NOT NULL DEFAULT 'draft',           -- draft -> pending_payment -> pending_review -> approved / rejected / sold
+    pickup_location TEXT,                            -- shown to buyers as "Location"
+    min_order_qty INTEGER NOT NULL DEFAULT 1,         -- minimum units a buyer can order
+    is_delivery INTEGER NOT NULL DEFAULT 0,           -- 1 = delivery available, 0 = pickup only
+    phone_number TEXT,                                -- seller's contact number
+    is_store_item INTEGER NOT NULL DEFAULT 0,         -- 1 = your own Marageli Store item, 0 = community listing
+    status TEXT NOT NULL DEFAULT 'draft',             -- draft -> pending_payment -> pending_review -> approved / rejected / sold
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     reviewed_at TEXT
 );
@@ -65,14 +68,6 @@ CREATE TABLE IF NOT EXISTS reports (
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
-CREATE TABLE IF NOT EXISTS favorites (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL REFERENCES users(id),
-    listing_id INTEGER NOT NULL REFERENCES listings(id),
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    UNIQUE(user_id, listing_id)
-);
-
 CREATE TABLE IF NOT EXISTS reactions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL REFERENCES users(id),
@@ -81,24 +76,3 @@ CREATE TABLE IF NOT EXISTS reactions (
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE(user_id, listing_id)
 );
-
-CREATE TABLE IF NOT EXISTS game_boards (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT UNIQUE NOT NULL,
-    status TEXT NOT NULL DEFAULT 'closed', -- 'closed' = waiting for winners, 'open' = accepting picks
-    price_etb REAL NOT NULL DEFAULT 20,
-    round INTEGER NOT NULL DEFAULT 1
-);
-
-CREATE TABLE IF NOT EXISTS game_numbers (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    board_id INTEGER NOT NULL REFERENCES game_boards(id),
-    number INTEGER NOT NULL,
-    status TEXT NOT NULL DEFAULT 'available', -- available | pending_payment | taken
-    user_id INTEGER REFERENCES users(id),
-    receipt_file_id TEXT,
-    taken_at TEXT,
-    UNIQUE(board_id, number)
-);
-
-INSERT OR IGNORE INTO game_boards (name) VALUES ('Tepi'), ('Aman'), ('Mizan');
