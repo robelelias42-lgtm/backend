@@ -274,7 +274,7 @@ async def sell_receipt(message: Message, state: FSMContext):
 
     await message.answer(
         "እናመሰግናለን! ደረሰኝዎ ለግምገማ ተልኳል። አድሚን ዝርዝርዎን ካጸደቀ ወይም ውድቅ ካደረገ በኋላ ይነገርዎታል።",
-        reply_markup=main_menu_keyboard(),
+        reply_markup=main_menu_keyboard(is_admin=message.from_user.id == ADMIN_TELEGRAM_ID),
     )
     await state.clear()
 
