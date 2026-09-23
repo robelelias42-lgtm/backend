@@ -69,16 +69,26 @@ class RemoveProduct(StatesGroup):
     entering_id = State()
 
 
+# ---------- Button labels (kept as constants so keyboard text always
+# matches the filter that listens for it) ----------
+
+BTN_SELL = "🛍 እቃዎን ይሽጡ"
+BTN_ADD_STORE_ITEM = "➕ Store እቃ ጨምር"
+BTN_MANAGE_PRODUCTS = "📦 ምርቶችን ያስተዳድሩ"
+BTN_REMOVE_PRODUCT = "🗑 ምርት አስወግድ"
+BTN_OPEN_APP = "🏪 ማራጌሊ ገበያን ይመልከቱ"
+
+
 # ---------- Helpers ----------
 
 def main_menu_keyboard(is_admin: bool = False):
-    buttons = [[KeyboardButton(text="🛍 እቃዎን ይሽጡ")]]
+    buttons = [[KeyboardButton(text=BTN_SELL)]]
     if is_admin:
-        buttons.append([KeyboardButton(text="➕ የሱቅ እቃ ያክሉ")])
-        buttons.append([KeyboardButton(text="📦 ምርቶችን ያስተዳድሩ")])
-        buttons.append([KeyboardButton(text="🗑 ምርት ያስወግዱ")])
+        buttons.append([KeyboardButton(text=BTN_ADD_STORE_ITEM)])
+        buttons.append([KeyboardButton(text=BTN_MANAGE_PRODUCTS)])
+        buttons.append([KeyboardButton(text=BTN_REMOVE_PRODUCT)])
     if MINI_APP_URL and MINI_APP_URL != "YOUR_MINI_APP_URL":
-        buttons.append([KeyboardButton(text="🏪 ማራጌሊ ገበያን ይመልከቱ", web_app=WebAppInfo(url=MINI_APP_URL))])
+        buttons.append([KeyboardButton(text=BTN_OPEN_APP, web_app=WebAppInfo(url=MINI_APP_URL))])
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
 
@@ -90,8 +100,8 @@ def category_keyboard(categories):
 def delivery_keyboard():
     return InlineKeyboardMarkup(
         inline_keyboard=[[
-            InlineKeyboardButton(text="🚚 አዎ፣ የመላኪያ አገልግሎት አለ", callback_data="deliv:yes"),
-            InlineKeyboardButton(text="🏬 አይ፣ በአካል ብቻ መውሰድ", callback_data="deliv:no"),
+            InlineKeyboardButton(text="🚚 አዎ፣ ዲሊቨሪ አለ", callback_data="deliv:yes"),
+            InlineKeyboardButton(text="🏬 የለም፣ ራስን መውሰድ ብቻ", callback_data="deliv:no"),
         ]]
     )
 
@@ -111,7 +121,7 @@ def sold_toggle_keyboard(listing_id: int, status: str, is_store_item: bool):
     if is_store_item:
         label, action = ("✅ እንደሚገኝ ምልክት አድርግ", "onmarket") if status == "sold" else ("🚫 እንደማይገኝ ምልክት አድርግ", "sold")
     else:
-        label, action = ("🟢 በገበያ ላይ እንዳለ ምልክት አድርግ", "onmarket") if status == "sold" else ("🔴 እንደተሸጠ ምልክት አድርግ", "sold")
+        label, action = ("🟢 በገበያ ላይ ምልክት አድርግ", "onmarket") if status == "sold" else ("🔴 እንደተሸጠ ምልክት አድርግ", "sold")
     return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=label, callback_data=f"stat:{action}:{listing_id}")]])
 
 
@@ -128,8 +138,8 @@ async def start_handler(message: Message):
     )
     await message.answer(
         f"ሰላም! 👋 እንኳን በሰላም ወደ {SITE_NAME} (ማራጌሊ) ገበያ መጡ!\n\n"
-        "በመላው ቴፒ፣ሚዛን እና አማን ካሉ ሰዎች ጋር እዚህ ቴሌግራም ውስጥ ይግዙ እና ይሽጡ።\n\n"
-        "ለመጀመር ከታች ያሉትን ቁልፎች(buttons) ተጠቀም",
+        "በመላው ኢትዮጵያ ካሉ ሰዎች ጋር እዚህ ቴሌግራም ውስጥ ይግዙ እና ይሽጡ።\n\n"
+        "ለመጀመር ከታች ያሉትን ቁልፎች ይጠቀሙ።",
         reply_markup=main_menu_keyboard(is_admin=is_admin),
     )
 
@@ -138,16 +148,16 @@ async def start_handler(message: Message):
 async def cancel_handler(message: Message, state: FSMContext):
     await state.clear()
     is_admin = message.from_user.id == ADMIN_TELEGRAM_ID
-    await message.answer("ተሰርዟል። ወደ ዋናው ሜኑ ተመልሰዋል።", reply_markup=main_menu_keyboard(is_admin=is_admin))
+    await message.answer("ተሰርዟል። ወደ ዋናው ማውጫ ተመልሰዋል።", reply_markup=main_menu_keyboard(is_admin=is_admin))
 
 
 # ---------- Selling flow: anyone creates one listing (Community Market) ----------
 
-@router.message(F.text == "🛍 እቃዎን ይሽጡ")
+@router.message(F.text == BTN_SELL)
 async def sell_start(message: Message, state: FSMContext):
     categories = await db.list_categories()
     await state.set_state(SellListing.choosing_category)
-    await message.answer("የእርስዎ እቃ የትኛው ምድብ ውስጥ ነው።?", reply_markup=category_keyboard(categories))
+    await message.answer("የእርስዎ እቃ የትኛው ምድብ ውስጥ ነው?", reply_markup=category_keyboard(categories))
 
 
 @router.callback_query(SellListing.choosing_category, F.data.startswith("cat:"))
@@ -155,7 +165,7 @@ async def sell_category_chosen(callback: CallbackQuery, state: FSMContext):
     category_id = int(callback.data.split(":")[1])
     await state.update_data(category_id=category_id)
     await state.set_state(SellListing.entering_title)
-    await callback.message.answer("የእቃው ስም? (ለምሳሌ 'Casio calculator')")
+    await callback.message.answer("የእቃው ስም ማን ነው? (ለምሳሌ 'ካልኩሌተር')")
     await callback.answer()
 
 
@@ -170,7 +180,7 @@ async def sell_title(message: Message, state: FSMContext):
 async def sell_description(message: Message, state: FSMContext):
     await state.update_data(description=message.text)
     await state.set_state(SellListing.entering_price)
-    await message.answer(f"ዋጋው ስንት ነው፣ በ{CURRENCY}? (ቁጥሮች ብቻ ለምሳሌ. 250)")
+    await message.answer(f"ዋጋው ስንት ነው፣ በ{CURRENCY}? (ቁጥሮች ብቻ፣ ለምሳሌ 250)")
 
 
 @router.message(SellListing.entering_price)
@@ -182,7 +192,7 @@ async def sell_price(message: Message, state: FSMContext):
         return
     await state.update_data(price=price)
     await state.set_state(SellListing.uploading_photo)
-    await message.answer("አንድ ፎቶ ብቻ ይላኩ፦")
+    await message.answer("የእቃውን አንድ ፎቶ ይላኩ፦")
 
 
 @router.message(SellListing.uploading_photo, F.photo)
@@ -190,12 +200,12 @@ async def sell_photo(message: Message, state: FSMContext):
     photo_file_id = message.photo[-1].file_id
     await state.update_data(photo_file_id=photo_file_id)
     await state.set_state(SellListing.entering_pickup)
-    await message.answer("እቃው የት ነው የሚገኘው? (ለምሳሌ 'ቴፒ፣ ሚዛን')")
+    await message.answer("እቃው የት ነው የሚገኘው? (ለምሳሌ 'ቦሌ፣ አዲስ አበባ')")
 
 
 @router.message(SellListing.uploading_photo)
 async def sell_photo_invalid(message: Message):
-    await message.answer("እባክህ ፎቶ ይላኩ (ጽሑፍ ሳይሆን).")
+    await message.answer("እባክዎ ፎቶ ይላኩ (ጽሑፍ ሳይሆን)።")
 
 
 @router.message(SellListing.entering_pickup)
@@ -216,7 +226,7 @@ async def sell_min_qty(message: Message, state: FSMContext):
         return
     await state.update_data(min_order_qty=qty)
     await state.set_state(SellListing.choosing_delivery)
-    await message.answer("ለዚህ ዕቃ የመላኪያ አገልግሎት አለ??", reply_markup=delivery_keyboard())
+    await message.answer("ለዚህ ዕቃ ዲሊቨሪ አለ?", reply_markup=delivery_keyboard())
 
 
 @router.callback_query(SellListing.choosing_delivery, F.data.startswith("deliv:"))
@@ -224,7 +234,7 @@ async def sell_delivery_chosen(callback: CallbackQuery, state: FSMContext):
     is_delivery = callback.data.split(":")[1] == "yes"
     await state.update_data(is_delivery=is_delivery)
     await state.set_state(SellListing.entering_phone)
-    await callback.message.answer("በየትኛው ስልክ ቁጥር ገዢዎች እርስዎን ማግኘት አለባቸው?")
+    await callback.message.answer("በየትኛው ስልክ ቁጥር ገዢዎች እርስዎን ማግኘት ይችላሉ?")
     await callback.answer()
 
 
@@ -249,9 +259,9 @@ async def sell_phone(message: Message, state: FSMContext):
     await state.set_state(SellListing.uploading_receipt)
 
     await message.answer(
-        "ዝርዝርዎ እንደ ረቂቅ ተቀምጧል። እሱን ለማስለጠፍ እባክዎን ይክፈሉት"
-        "ቀጥሎ ከሚዘረዘረው የክፍያ መንገድ አንዱን በመጠቀም 20 ብር ከፍለው የክፍያ ደረሰኝ ፎቶ/ስክሪንሾት ይላኩ"
-        "ቴሌ ብር፦ 0992242197"
+        "ዝርዝርዎ እንደ ረቂቅ (draft) ተቀምጧል። ለማስተዋወቅ፣ እባክዎ 20 ብር በቴሌብር ይክፈሉ፦\n"
+        "ቴሌብር: 0992242197\n\n"
+        "ከዚያ የክፍያ ደረሰኝዎን ፎቶ/screenshot እዚህ ይላኩ።"
     )
 
 
@@ -263,8 +273,7 @@ async def sell_receipt(message: Message, state: FSMContext):
     await db.create_payment(listing_id=data["listing_id"], receipt_file_id=receipt_file_id)
 
     await message.answer(
-        "እናመሰግናለን! የክፍያ ደረሰኝዎ ለግምገማ ተልኳል። አስተዳዳሪ ዝርዝርዎን "
-        "ካጸደቀው ወይም ካልተቀበለው ማሳወቂያ ይደርስዎታል።",
+        "እናመሰግናለን! ደረሰኝዎ ለግምገማ ተልኳል። አድሚን ዝርዝርዎን ካጸደቀ ወይም ውድቅ ካደረገ በኋላ ይነገርዎታል።",
         reply_markup=main_menu_keyboard(),
     )
     await state.clear()
@@ -274,14 +283,14 @@ async def sell_receipt(message: Message, state: FSMContext):
         chat_id=ADMIN_TELEGRAM_ID,
         photo=receipt_file_id,
         caption=(
-            f"📥 አዲስ ዝርዝር ለግምገማ ተጠባባቂ ነው\n\n"
+            f"📥 አዲስ ዝርዝር ለግምገማ ይጠብቃል\n\n"
             f"#{listing['id']} — {listing['title']}\n"
-            f"ዋጋ፦ {listing['price_etb']} {CURRENCY}\n"
-            f"ቦታ፦ {listing['pickup_location']}\n"
-            f"ዝቅተኛ የትዕዛዝ ብዛት፦ {listing['min_order_qty']}\n"
-            f"መላኪያ፦ {'አዎ' if listing['is_delivery'] else 'አይ'}\n"
-            f"ስልክ፦ {listing['phone_number']}\n"
-            f"መግለጫ፦ {listing['description']}"
+            f"ዋጋ: {listing['price_etb']} {CURRENCY}\n"
+            f"አካባቢ: {listing['pickup_location']}\n"
+            f"አነስተኛ ትዕዛዝ: {listing['min_order_qty']}\n"
+            f"ዲሊቨሪ: {'አዎ' if listing['is_delivery'] else 'የለም'}\n"
+            f"ስልክ: {listing['phone_number']}\n"
+            f"መግለጫ: {listing['description']}"
         ),
         reply_markup=admin_review_keyboard(listing["id"]),
     )
@@ -294,14 +303,14 @@ async def sell_receipt_invalid(message: Message):
 
 # ---------- Admin: post a Marageli Store item directly (no payment/review) ----------
 
-@router.message(F.text == "➕ የሱቅ እቃ ያክሉ")
+@router.message(F.text == BTN_ADD_STORE_ITEM)
 async def store_item_start(message: Message, state: FSMContext):
     if message.from_user.id != ADMIN_TELEGRAM_ID:
         return  # silently ignore — regular users never see this button anyway
 
     categories = await db.list_categories()
     await state.set_state(AddStoreItem.choosing_category)
-    await message.answer("የሱቅ እቃ — የትኛው ምድብ ነው?", reply_markup=category_keyboard(categories))
+    await message.answer("የStore እቃ — የትኛው ምድብ ነው?", reply_markup=category_keyboard(categories))
 
 
 @router.callback_query(AddStoreItem.choosing_category, F.data.startswith("cat:"))
@@ -324,7 +333,7 @@ async def store_item_title(message: Message, state: FSMContext):
 async def store_item_description(message: Message, state: FSMContext):
     await state.update_data(description=message.text)
     await state.set_state(AddStoreItem.entering_price)
-    await message.answer(f"ዋጋው ስንት ነው፣ በ{CURRENCY}? (ቁጥሮች ብቻ፣ ለምሳሌ 250)")
+    await message.answer(f"ዋጋ በ{CURRENCY}? (ቁጥሮች ብቻ፣ ለምሳሌ 250)")
 
 
 @router.message(AddStoreItem.entering_price)
@@ -336,7 +345,7 @@ async def store_item_price(message: Message, state: FSMContext):
         return
     await state.update_data(price=price)
     await state.set_state(AddStoreItem.uploading_photo)
-    await message.answer("አንድ ፎቶ ብቻ ይላኩ፦")
+    await message.answer("የእቃውን አንድ ፎቶ ይላኩ፦")
 
 
 @router.message(AddStoreItem.uploading_photo, F.photo)
@@ -344,7 +353,7 @@ async def store_item_photo(message: Message, state: FSMContext):
     photo_file_id = message.photo[-1].file_id
     await state.update_data(photo_file_id=photo_file_id)
     await state.set_state(AddStoreItem.entering_pickup)
-    await message.answer("ቦታ?")
+    await message.answer("አካባቢ/ቦታ?")
 
 
 @router.message(AddStoreItem.uploading_photo)
@@ -356,7 +365,7 @@ async def store_item_photo_invalid(message: Message):
 async def store_item_pickup(message: Message, state: FSMContext):
     await state.update_data(pickup_location=message.text)
     await state.set_state(AddStoreItem.entering_min_qty)
-    await message.answer("አንድ ገዢ ማዘዝ የሚችለው አነስተኛው የንጥሎች ብዛት ስንት ነው? (ለምሳሌ 1)")
+    await message.answer("ገዢ ማዘዝ የሚችለው አነስተኛ ብዛት ስንት ነው? (ለምሳሌ 1)")
 
 
 @router.message(AddStoreItem.entering_min_qty)
@@ -370,7 +379,7 @@ async def store_item_min_qty(message: Message, state: FSMContext):
         return
     await state.update_data(min_order_qty=qty)
     await state.set_state(AddStoreItem.choosing_delivery)
-    await message.answer("የመላኪያ አገልግሎት አለ?", reply_markup=delivery_keyboard())
+    await message.answer("ዲሊቨሪ አለ?", reply_markup=delivery_keyboard())
 
 
 @router.callback_query(AddStoreItem.choosing_delivery, F.data.startswith("deliv:"))
@@ -378,7 +387,7 @@ async def store_item_delivery_chosen(callback: CallbackQuery, state: FSMContext)
     is_delivery = callback.data.split(":")[1] == "yes"
     await state.update_data(is_delivery=is_delivery)
     await state.set_state(AddStoreItem.entering_phone)
-    await callback.message.answer("ለዚህ እቃ የሚገናኙበት ስልክ ቁጥር?")
+    await callback.message.answer("ለዚህ እቃ የመገናኛ ስልክ ቁጥር?")
     await callback.answer()
 
 
@@ -403,7 +412,7 @@ async def store_item_phone(message: Message, state: FSMContext):
     await state.clear()
 
     await message.answer(
-        f"✅ '{listing['title']}' ወደ ማራጌሊ ሱቅ ታትሟል — አሁን በሚኒ አፕ ላይ ይገኛል።",
+        f"✅ '{listing['title']}' ወደ ማራጌሊ Store ታትሟል — አሁን በMini App ውስጥ ይታያል።",
         reply_markup=main_menu_keyboard(is_admin=True),
     )
     await message.answer(
@@ -424,7 +433,7 @@ async def toggle_listing_status(callback: CallbackQuery):
     listing_id = int(listing_id_str)
     listing = await db.get_listing(listing_id)
     if not listing:
-        await callback.answer("ያ ዝርዝር ከአሁን በኋላ የለም።", show_alert=True)
+        await callback.answer("ይህ ዝርዝር ከአሁን በኋላ የለም።", show_alert=True)
         return
 
     if action == "sold":
@@ -437,16 +446,16 @@ async def toggle_listing_status(callback: CallbackQuery):
     await callback.message.edit_reply_markup(
         reply_markup=sold_toggle_keyboard(listing_id, new_status, bool(listing["is_store_item"]))
     )
-    await callback.answer("ተዘምኗል ✅ — ለውጡ አሁን በሚኒ አፕ ላይ ታይቷል።")
+    await callback.answer("ተዘምኗል ✅ — ይህ አሁን በMini App ውስጥ ይታያል።")
 
 
-@router.message(F.text == "📦 ምርቶችን ያስተዳድሩ")
+@router.message(F.text == BTN_MANAGE_PRODUCTS)
 async def manage_products(message: Message):
     if message.from_user.id != ADMIN_TELEGRAM_ID:
         return
     listings = await db.list_manageable_listings()
     if not listings:
-        await message.answer("እስካሁን ምንም በገበያ ላይ ያሉ ምርቶች የሉም።")
+        await message.answer("እስካሁን ምንም ንቁ ምርት የለም።")
         return
     for listing in listings:
         is_store = bool(listing["is_store_item"])
@@ -454,7 +463,7 @@ async def manage_products(message: Message):
             label = "✅ ይገኛል" if listing["status"] == "approved" else "🚫 አይገኝም"
         else:
             label = "🟢 በገበያ ላይ" if listing["status"] == "approved" else "🔴 ተሽጧል"
-        tab = "ማራጌሊ ሱቅ" if is_store else "የማህበረሰብ ገበያ"
+        tab = "Marageli Store" if is_store else "የማህበረሰብ ገበያ"
         await message.answer(
             f"#{listing['id']} — {listing['title']} — {listing['price_etb']} {CURRENCY}\n"
             f"{tab} · {label}",
@@ -469,14 +478,14 @@ async def products_command(message: Message):
 
 # ---------- Admin: remove a product by ID ----------
 
-@router.message(F.text == "🗑 ምርት ያስወግዱ")
+@router.message(F.text == BTN_REMOVE_PRODUCT)
 async def remove_product_start(message: Message, state: FSMContext):
     if message.from_user.id != ADMIN_TELEGRAM_ID:
         return
     await state.set_state(RemoveProduct.entering_id)
     await message.answer(
-        "ለማስወገድ የምርቱን ID (ከምርቱ ስር የሚታየውን ትንሽ 'ቁ. X' ቁጥር) ይላኩ።\n"
-        "ይህ ሊመለስ አይችልም። ለመሰረዝ /cancel ይላኩ።"
+        "እቃውን ለማስወገድ የምርቱን ID (ከምርቱ ስር የሚታየው ትንሽ 'No. X' ቁጥር) ይላኩ።\n"
+        "ይህ ወደ ኋላ መመለስ አይቻልም። ለመሰረዝ /cancel ይላኩ።"
     )
 
 
@@ -490,13 +499,13 @@ async def remove_product_id_entered(message: Message, state: FSMContext):
 
     listing = await db.get_listing(listing_id)
     if not listing:
-        await message.answer(f"በID {listing_id} የተገኘ ምርት የለም። እንደገና ይሞክሩ ወይም /cancel ይላኩ።")
+        await message.answer(f"በ ID {listing_id} ምንም ምርት አልተገኘም። እንደገና ይሞክሩ ወይም /cancel ይላኩ።")
         return
 
     await db.delete_listing(listing_id)
     await state.clear()
     await message.answer(
-        f"🗑 #{listing_id} — '{listing['title']}' ተወግዷል። አሁን ከሚኒ አፕ ላይ ተወግዷል።",
+        f"🗑 #{listing_id} — '{listing['title']}' ተወግዷል። ከMini App ጠፍቷል።",
         reply_markup=main_menu_keyboard(is_admin=True),
     )
 
@@ -510,7 +519,7 @@ async def remove_command(message: Message, state: FSMContext):
         listing_id = int(parts[1])
         listing = await db.get_listing(listing_id)
         if not listing:
-            await message.answer(f"በID {listing_id} የተገኘ ምርት የለም።")
+            await message.answer(f"በ ID {listing_id} ምንም ምርት አልተገኘም።")
             return
         await db.delete_listing(listing_id)
         await message.answer(f"🗑 #{listing_id} — '{listing['title']}' ተወግዷል።")
@@ -539,7 +548,7 @@ async def approve_listing(callback: CallbackQuery):
 
     seller = await db.query("SELECT telegram_id FROM users WHERE id = ?", [listing["user_id"]])
     if seller:
-        await bot.send_message(seller[0]["telegram_id"], f"🎉 የእርስዎ ዝርዝር '{listing['title']}' ጸድቋል እና አሁን በገበያ ላይ ነው!")
+        await bot.send_message(seller[0]["telegram_id"], f"🎉 ዝርዝርዎ '{listing['title']}' ጸድቋል እና አሁን ቀጥታ ላይ ነው!")
 
 
 @router.callback_query(F.data.startswith("reject:"))
@@ -560,7 +569,7 @@ async def reject_listing(callback: CallbackQuery):
     if seller:
         await bot.send_message(
             seller[0]["telegram_id"],
-            f"የእርስዎ ዝርዝር '{listing['title']}' ውድቅ ተደርጓል። ጥያቄ ካለዎት አስተዳዳሪውን ያግኙ።",
+            f"ዝርዝርዎ '{listing['title']}' ውድቅ ተደርጓል። ጥያቄ ካለዎት አስተዳዳሪውን ያነጋግሩ።",
         )
 
 
@@ -570,7 +579,7 @@ async def pending_command(message: Message):
         return
     pending = await db.list_pending_review_listings()
     if not pending:
-        await message.answer("ለግምገማ የሚጠባበቅ ምንም ዝርዝር የለም። 🎉")
+        await message.answer("ለግምገማ የሚጠባበቅ ዝርዝር የለም። 🎉")
         return
     for listing in pending:
         await bot.send_photo(
